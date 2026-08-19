@@ -21,9 +21,10 @@ page can't do:
   a new tab; `http(s)`/`mailto` links open in your default browser.
 - **TOC sidebar** — a collapsible table of contents built from the document's
   headings, with click-to-jump and the current section highlighted while you
-  scroll. Toggle it with the ☰ button or **Ctrl+B**; the preference is
-  remembered across sessions. It hides itself for documents with fewer than
-  two headings.
+  scroll. Toggle it with the ☰ button or **Ctrl+B**, and resize it by
+  dragging its edge (double-click the edge to reset). Both visibility and
+  width are remembered across sessions. It hides itself for documents with
+  fewer than two headings.
 - **Find in document** — **Ctrl+F** opens a find bar with live highlighting
   (CSS Custom Highlight API — no DOM mutation), match counter, and
   Enter / Shift+Enter to walk matches.

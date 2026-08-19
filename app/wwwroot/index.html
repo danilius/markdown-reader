@@ -107,7 +107,7 @@
 
   /* ---------- TOC sidebar ---------- */
   .toc {
-    flex: 0 0 250px;
+    flex: 0 0 var(--toc-width, 250px);
     overflow-y: auto;
     border-inline-end: 1px solid var(--border);
     padding: 14px 10px 40px 14px;
@@ -115,6 +115,16 @@
     scrollbar-width: thin;
   }
   .pane.toc-hidden .toc, .pane.no-headings .toc { display: none; }
+  .toc-resizer {
+    flex: 0 0 5px;
+    cursor: col-resize;
+    background: transparent;
+    margin-inline-start: -5px;   /* overlaps the TOC border so the grab area is generous */
+    z-index: 6;
+  }
+  .toc-resizer:hover, .toc-resizer.dragging { background: var(--accent); opacity: .35; }
+  .pane.toc-hidden .toc-resizer, .pane.no-headings .toc-resizer { display: none; }
+  body.toc-resizing { cursor: col-resize; user-select: none; }
   .toc .toc-title {
     font-size: 11px; font-weight: 600; letter-spacing: .05em;
     text-transform: uppercase; color: var(--muted);
@@ -293,7 +303,7 @@
   /* ---------- Print (used by Export to PDF) ---------- */
   @media print {
     html, body { height: auto; overflow: visible; display: block; }
-    #tabbar, #findbar, #drop-overlay, .filebar, .toc { display: none !important; }
+    #tabbar, #findbar, #drop-overlay, .filebar, .toc, .toc-resizer { display: none !important; }
     #panes { position: static; overflow: visible; }
     .pane { display: none; }
     .pane.active { display: block; position: static; overflow: visible; }
@@ -342,6 +352,11 @@ let tabs = [];          // {id, path, name, tabEl, paneEl, contentEl, docEl, toc
 let activeId = null;
 let nextId = 1;
 let tocVisible = true;  // global preference, persisted by the host
+let tocWidth = 250;     // px, global preference, persisted by the host
+
+function applyTocWidth() {
+  document.documentElement.style.setProperty('--toc-width', tocWidth + 'px');
+}
 
 function send(msg) { if (host) host.postMessage(msg); }
 function activeTab() { return tabs.find(t => t.id === activeId) || null; }
@@ -361,6 +376,7 @@ function sendState() {
     files: tabs.map(t => ({ path: t.path, scroll: t.contentEl.scrollTop })),
     activePath: active ? active.path : null,
     tocVisible,
+    tocWidth,
   });
 }
 
@@ -455,6 +471,11 @@ function fillPane(tab, text) {
   const tocEl = document.createElement('nav');
   tocEl.className = 'toc';
 
+  const resizer = document.createElement('div');
+  resizer.className = 'toc-resizer';
+  resizer.title = 'Drag to resize; double-click to reset';
+  attachTocResizer(resizer);
+
   const contentEl = document.createElement('div');
   contentEl.className = 'content';
 
@@ -483,7 +504,7 @@ function fillPane(tab, text) {
 
   const docEl = renderMarkdown(text, tab.path);
   contentEl.append(bar, docEl);
-  tab.paneEl.append(tocEl, contentEl);
+  tab.paneEl.append(tocEl, resizer, contentEl);
 
   tab.tocEl = tocEl;
   tab.contentEl = contentEl;
@@ -591,6 +612,39 @@ function updateTocActive(tab) {
   }
   for (const entry of tab.headings)
     entry.a.classList.toggle('active', entry === current);
+}
+
+function attachTocResizer(resizer) {
+  resizer.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    resizer.setPointerCapture(e.pointerId);
+    resizer.classList.add('dragging');
+    document.body.classList.add('toc-resizing');
+    const startX = e.clientX;
+    const startWidth = tocWidth;
+
+    const onMove = ev => {
+      tocWidth = Math.min(600, Math.max(140, startWidth + (ev.clientX - startX)));
+      applyTocWidth();
+    };
+    const onUp = ev => {
+      resizer.releasePointerCapture(e.pointerId);
+      resizer.classList.remove('dragging');
+      document.body.classList.remove('toc-resizing');
+      resizer.removeEventListener('pointermove', onMove);
+      resizer.removeEventListener('pointerup', onUp);
+      resizer.removeEventListener('pointercancel', onUp);
+      sendStateSoon();
+    };
+    resizer.addEventListener('pointermove', onMove);
+    resizer.addEventListener('pointerup', onUp);
+    resizer.addEventListener('pointercancel', onUp);
+  });
+  resizer.addEventListener('dblclick', () => {
+    tocWidth = 250;
+    applyTocWidth();
+    sendStateSoon();
+  });
 }
 
 function toggleToc() {
@@ -740,6 +794,9 @@ if (host) {
       }
       case 'prefs':
         tocVisible = m.tocVisible !== false;
+        if (typeof m.tocWidth === 'number' && m.tocWidth >= 140 && m.tocWidth <= 600)
+          tocWidth = m.tocWidth;
+        applyTocWidth();
         for (const t of tabs) t.paneEl.classList.toggle('toc-hidden', !tocVisible);
         break;
       case 'dragState':

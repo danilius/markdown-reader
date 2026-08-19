@@ -15,6 +15,7 @@ public sealed class SessionData
     public List<SessionFile> Files { get; set; } = [];
     public string? ActivePath { get; set; }
     public bool TocVisible { get; set; } = true;
+    public double TocWidth { get; set; } = 250;
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
     public double WindowWidth { get; set; } = 1100;

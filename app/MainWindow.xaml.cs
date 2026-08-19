@@ -153,7 +153,7 @@ public partial class MainWindow : Window
 
     private async Task RestoreSessionAsync()
     {
-        PostToReader(new { type = "prefs", tocVisible = _session.TocVisible });
+        PostToReader(new { type = "prefs", tocVisible = _session.TocVisible, tocWidth = _session.TocWidth });
 
         foreach (var f in _session.Files.Where(f => File.Exists(f.Path)))
             await OpenFileAsync(f.Path, f.Scroll);
@@ -253,6 +253,8 @@ public partial class MainWindow : Window
         if (msg.TryGetProperty("tocVisible", out var tv) &&
             tv.ValueKind is JsonValueKind.True or JsonValueKind.False)
             _session.TocVisible = tv.GetBoolean();
+        if (msg.TryGetProperty("tocWidth", out var tw) && tw.ValueKind == JsonValueKind.Number)
+            _session.TocWidth = Math.Clamp(tw.GetDouble(), 140, 600);
         SessionStore.Save(_session);
     }
 
