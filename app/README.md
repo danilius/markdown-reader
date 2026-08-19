@@ -19,6 +19,17 @@ page can't do:
   so the app can be used with *Open with…* / file association.
 - **Relative links** — clicking a link to another local `.md` file opens it in
   a new tab; `http(s)`/`mailto` links open in your default browser.
+- **TOC sidebar** — a collapsible table of contents built from the document's
+  headings, with click-to-jump and the current section highlighted while you
+  scroll. Toggle it with the ☰ button or **Ctrl+B**; the preference is
+  remembered across sessions. It hides itself for documents with fewer than
+  two headings.
+- **Find in document** — **Ctrl+F** opens a find bar with live highlighting
+  (CSS Custom Highlight API — no DOM mutation), match counter, and
+  Enter / Shift+Enter to walk matches.
+- **Export to PDF** — **Ctrl+P** or the ⤓ PDF button prints the current
+  document to a PDF of your choosing; a print stylesheet strips the app
+  chrome so only the rendered document is exported.
 
 ## Keyboard shortcuts
 
@@ -28,6 +39,9 @@ page can't do:
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+R | Reload current tab from disk |
 | Ctrl+W (or middle-click a tab) | Close tab |
+| Ctrl+F | Find in document |
+| Ctrl+B | Show/hide the TOC sidebar |
+| Ctrl+P | Export current document as PDF |
 
 Drag & drop of `.md` files works anywhere in the window.
 

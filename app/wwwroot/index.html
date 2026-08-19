@@ -19,6 +19,8 @@
     --blockquote: #656d76;
     --thead-bg: #f6f8fa;
     --row-alt: #f6f8fa;
+    --find-hit: rgba(255, 213, 0, .5);
+    --find-current: #ff9632;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -35,6 +37,8 @@
       --blockquote: #8b949e;
       --thead-bg: #161b22;
       --row-alt: #161b22;
+      --find-hit: rgba(210, 153, 34, .45);
+      --find-current: #c46e0e;
     }
   }
   * { box-sizing: border-box; }
@@ -97,10 +101,39 @@
   #panes { flex: 1 1 auto; position: relative; overflow: hidden; }
   .pane {
     position: absolute; inset: 0;
-    overflow-y: auto;
     display: none;
   }
-  .pane.active { display: block; }
+  .pane.active { display: flex; flex-direction: row; }
+
+  /* ---------- TOC sidebar ---------- */
+  .toc {
+    flex: 0 0 250px;
+    overflow-y: auto;
+    border-inline-end: 1px solid var(--border);
+    padding: 14px 10px 40px 14px;
+    font-size: 13px;
+    scrollbar-width: thin;
+  }
+  .pane.toc-hidden .toc, .pane.no-headings .toc { display: none; }
+  .toc .toc-title {
+    font-size: 11px; font-weight: 600; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 0 0 8px 6px;
+  }
+  .toc a {
+    display: block;
+    color: var(--muted); text-decoration: none;
+    padding: 3px 6px; border-radius: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    unicode-bidi: plaintext;
+  }
+  .toc a:hover { color: var(--fg); background: var(--tab-hover-bg); }
+  .toc a.active { color: var(--accent); font-weight: 600; }
+  .toc a.lvl2 { padding-inline-start: 20px; }
+  .toc a.lvl3 { padding-inline-start: 34px; }
+  .toc a.lvl4, .toc a.lvl5, .toc a.lvl6 { padding-inline-start: 48px; font-size: 12px; }
+
+  .content { flex: 1 1 auto; overflow-y: auto; position: relative; }
   .doc {
     max-width: 900px;
     margin: 0 auto;
@@ -165,8 +198,41 @@
   .doc pre code { background: transparent; padding: 0; }
   .doc input[type="checkbox"] { margin-inline-end: .5em; }
 
+  /* ---------- Find bar & highlights ---------- */
+  #findbar {
+    position: fixed; top: 76px; right: 28px; z-index: 60;
+    display: flex; align-items: center; gap: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  }
+  #findbar[hidden] { display: none; }
+  #find-input {
+    width: 200px;
+    border: none; outline: none;
+    background: transparent; color: var(--fg);
+    font-size: 13px; font-family: inherit;
+    padding: 2px 4px;
+  }
+  #find-count {
+    font-size: 11.5px; color: var(--muted);
+    min-width: 44px; text-align: center;
+    white-space: nowrap;
+  }
+  #findbar button {
+    border: none; background: transparent; color: var(--muted);
+    width: 24px; height: 24px; border-radius: 5px;
+    cursor: pointer; font-size: 12px; font-family: inherit;
+  }
+  #findbar button:hover { background: var(--tab-hover-bg); color: var(--fg); }
+  ::highlight(search) { background-color: var(--find-hit); }
+  ::highlight(search-current) { background-color: var(--find-current); color: #1f2328; }
+
   /* ---------- Welcome / empty state ---------- */
   .welcome {
+    flex: 1 1 auto;
     height: 100%; display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     color: var(--muted); gap: 12px; text-align: center; padding: 24px;
@@ -223,6 +289,18 @@
     font-size: 11.5px; padding: 2px 9px; font-family: inherit;
   }
   .filebar button:hover { color: var(--fg); border-color: var(--muted); }
+
+  /* ---------- Print (used by Export to PDF) ---------- */
+  @media print {
+    html, body { height: auto; overflow: visible; display: block; }
+    #tabbar, #findbar, #drop-overlay, .filebar, .toc { display: none !important; }
+    #panes { position: static; overflow: visible; }
+    .pane { display: none; }
+    .pane.active { display: block; position: static; overflow: visible; }
+    .content { overflow: visible; }
+    .doc { padding: 0; max-width: none; }
+    .doc pre { white-space: pre-wrap; overflow-x: visible; }
+  }
 </style>
 </head>
 <body>
@@ -233,6 +311,13 @@
   <button id="newtab-btn" title="New tab — open file… (Ctrl+O)">+</button>
 </div>
 <div id="panes"></div>
+<div id="findbar" hidden>
+  <input id="find-input" type="text" placeholder="Find in document…" spellcheck="false">
+  <span id="find-count"></span>
+  <button id="find-prev" title="Previous match (Shift+Enter)">&#9650;</button>
+  <button id="find-next" title="Next match (Enter)">&#9660;</button>
+  <button id="find-close" title="Close (Esc)">&#215;</button>
+</div>
 <div id="drop-overlay">Drop Markdown files to open</div>
 
 <script src="marked.min.js"></script>
@@ -247,14 +332,19 @@ const panes     = document.getElementById('panes');
 const newtabBtn = document.getElementById('newtab-btn');
 const openBtn   = document.getElementById('open-btn');
 const dropOverlay = document.getElementById('drop-overlay');
+const findbar   = document.getElementById('findbar');
+const findInput = document.getElementById('find-input');
+const findCount = document.getElementById('find-count');
 
 marked.setOptions({ gfm: true, breaks: false });
 
-let tabs = [];          // {id, path, name, tabEl, paneEl}
+let tabs = [];          // {id, path, name, tabEl, paneEl, contentEl, docEl, tocEl, headings}
 let activeId = null;
 let nextId = 1;
+let tocVisible = true;  // global preference, persisted by the host
 
 function send(msg) { if (host) host.postMessage(msg); }
+function activeTab() { return tabs.find(t => t.id === activeId) || null; }
 
 /* ---------- Session state → host (debounced) ---------- */
 
@@ -265,11 +355,12 @@ function sendStateSoon() {
 }
 function sendState() {
   clearTimeout(stateTimer);
-  const active = tabs.find(t => t.id === activeId);
+  const active = activeTab();
   send({
     cmd: 'state',
-    files: tabs.map(t => ({ path: t.path, scroll: t.paneEl.scrollTop })),
+    files: tabs.map(t => ({ path: t.path, scroll: t.contentEl.scrollTop })),
     activePath: active ? active.path : null,
+    tocVisible,
   });
 }
 
@@ -335,10 +426,11 @@ function openDocument({ path, name, text, scroll }) {
 
   const paneEl = document.createElement('div');
   paneEl.className = 'pane';
+  paneEl.classList.toggle('toc-hidden', !tocVisible);
   panes.appendChild(paneEl);
-  paneEl.addEventListener('scroll', sendStateSoon);
 
-  const tab = { id, path, name, tabEl, paneEl };
+  const tab = { id, path, name, tabEl, paneEl,
+                contentEl: null, docEl: null, tocEl: null, headings: [] };
   tabs.push(tab);
 
   fillPane(tab, text);
@@ -353,12 +445,19 @@ function openDocument({ path, name, text, scroll }) {
   });
 
   activateTab(id);
-  if (scroll) paneEl.scrollTop = scroll;
+  if (scroll) tab.contentEl.scrollTop = scroll;
   sendStateSoon();
 }
 
 function fillPane(tab, text) {
   tab.paneEl.replaceChildren();
+
+  const tocEl = document.createElement('nav');
+  tocEl.className = 'toc';
+
+  const contentEl = document.createElement('div');
+  contentEl.className = 'content';
+
   const bar = document.createElement('div');
   bar.className = 'filebar';
   const pathSpan = document.createElement('span');
@@ -368,19 +467,41 @@ function fillPane(tab, text) {
   live.className = 'live';
   live.title = 'Reloads automatically when the file changes on disk';
   live.textContent = '● live';
+  const tocBtn = document.createElement('button');
+  tocBtn.textContent = '☰ TOC';
+  tocBtn.title = 'Show/hide the table of contents (Ctrl+B)';
+  tocBtn.addEventListener('click', toggleToc);
+  const pdfBtn = document.createElement('button');
+  pdfBtn.textContent = '⤓ PDF';
+  pdfBtn.title = 'Export this document as PDF (Ctrl+P)';
+  pdfBtn.addEventListener('click', () => send({ cmd: 'exportPdf', path: tab.path }));
   const reloadBtn = document.createElement('button');
   reloadBtn.textContent = '↻ Reload';
   reloadBtn.title = 'Re-read the file from disk now (Ctrl+R)';
   reloadBtn.addEventListener('click', () => send({ cmd: 'reload', path: tab.path }));
-  bar.append(pathSpan, live, reloadBtn);
-  tab.paneEl.appendChild(bar);
-  tab.paneEl.appendChild(renderMarkdown(text, tab.path));
+  bar.append(pathSpan, live, tocBtn, pdfBtn, reloadBtn);
+
+  const docEl = renderMarkdown(text, tab.path);
+  contentEl.append(bar, docEl);
+  tab.paneEl.append(tocEl, contentEl);
+
+  tab.tocEl = tocEl;
+  tab.contentEl = contentEl;
+  tab.docEl = docEl;
+
+  contentEl.addEventListener('scroll', () => {
+    sendStateSoon();
+    updateTocActive(tab);
+  });
+
+  buildToc(tab);
+  if (findbar.hidden === false && tab.id === activeId) runFind();
 }
 
 function refreshTab(tab, text, keepScroll) {
-  const scroll = keepScroll ? tab.paneEl.scrollTop : 0;
+  const scroll = keepScroll ? tab.contentEl.scrollTop : 0;
   fillPane(tab, text);
-  tab.paneEl.scrollTop = scroll;
+  tab.contentEl.scrollTop = scroll;
 }
 
 function activateTab(id) {
@@ -389,6 +510,7 @@ function activateTab(id) {
     t.tabEl.classList.toggle('active', t.id === id);
     t.paneEl.classList.toggle('active', t.id === id);
   }
+  if (!findbar.hidden) runFind();
   sendStateSoon();
 }
 
@@ -402,10 +524,174 @@ function closeTab(id) {
   if (activeId === id) {
     const next = tabs[idx] || tabs[idx - 1];
     if (next) activateTab(next.id);
-    else { activeId = null; showWelcome(); }
+    else { activeId = null; closeFind(); showWelcome(); }
   }
   sendStateSoon();
 }
+
+/* ---------- Table of contents ---------- */
+
+function slugify(text) {
+  return text.toLowerCase().trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/\s+/g, '-') || 'section';
+}
+
+function buildToc(tab) {
+  const headings = [...tab.docEl.querySelectorAll('h1, h2, h3, h4, h5, h6')];
+  tab.headings = [];
+  tab.tocEl.replaceChildren();
+
+  if (headings.length < 2) {
+    tab.paneEl.classList.add('no-headings');
+    return;
+  }
+  tab.paneEl.classList.remove('no-headings');
+
+  const title = document.createElement('div');
+  title.className = 'toc-title';
+  title.textContent = 'Contents';
+  tab.tocEl.appendChild(title);
+
+  const used = new Set();
+  for (const h of headings) {
+    if (!h.id) {
+      let s = slugify(h.textContent);
+      let n = 1;
+      while (used.has(s)) s = slugify(h.textContent) + '-' + (++n);
+      h.id = s;
+    }
+    used.add(h.id);
+
+    const a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.className = 'lvl' + h.tagName[1];
+    a.textContent = h.textContent;
+    a.title = h.textContent;
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const top = h.getBoundingClientRect().top
+                - tab.contentEl.getBoundingClientRect().top
+                + tab.contentEl.scrollTop - 44;   // clear the sticky filebar
+      tab.contentEl.scrollTo({ top, behavior: 'smooth' });
+    });
+    tab.tocEl.appendChild(a);
+    tab.headings.push({ h, a });
+  }
+  updateTocActive(tab);
+}
+
+function updateTocActive(tab) {
+  if (!tab.headings.length) return;
+  const contentTop = tab.contentEl.getBoundingClientRect().top;
+  let current = tab.headings[0];
+  for (const entry of tab.headings) {
+    if (entry.h.getBoundingClientRect().top - contentTop <= 52) current = entry;
+    else break;
+  }
+  for (const entry of tab.headings)
+    entry.a.classList.toggle('active', entry === current);
+}
+
+function toggleToc() {
+  tocVisible = !tocVisible;
+  for (const t of tabs) t.paneEl.classList.toggle('toc-hidden', !tocVisible);
+  sendStateSoon();
+}
+
+/* ---------- Find in document ---------- */
+
+let findRanges = [];
+let findIndex = -1;
+
+function openFind() {
+  findbar.hidden = false;
+  findInput.focus();
+  findInput.select();
+  if (findInput.value) runFind();
+}
+
+function closeFind() {
+  findbar.hidden = true;
+  clearFindHighlights();
+}
+
+function clearFindHighlights() {
+  if (window.CSS && CSS.highlights) {
+    CSS.highlights.delete('search');
+    CSS.highlights.delete('search-current');
+  }
+  findRanges = [];
+  findIndex = -1;
+  findCount.textContent = '';
+}
+
+function collectRanges(root, query) {
+  const q = query.toLowerCase();
+  const ranges = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue.toLowerCase();
+    let pos = 0, hit;
+    while ((hit = text.indexOf(q, pos)) !== -1) {
+      const range = new Range();
+      range.setStart(node, hit);
+      range.setEnd(node, hit + q.length);
+      ranges.push(range);
+      pos = hit + q.length;
+    }
+  }
+  return ranges;
+}
+
+function runFind() {
+  clearFindHighlights();
+  const tab = activeTab();
+  const query = findInput.value;
+  if (!tab || !query || !(window.CSS && CSS.highlights)) return;
+
+  findRanges = collectRanges(tab.docEl, query);
+  if (!findRanges.length) {
+    findCount.textContent = '0/0';
+    return;
+  }
+  CSS.highlights.set('search', new Highlight(...findRanges));
+
+  // Start from the first match at or below the current scroll position.
+  const contentTop = tab.contentEl.getBoundingClientRect().top;
+  let start = findRanges.findIndex(r => r.getBoundingClientRect().bottom >= contentTop);
+  setCurrentMatch(start === -1 ? 0 : start);
+}
+
+function setCurrentMatch(i) {
+  const tab = activeTab();
+  if (!tab || !findRanges.length) return;
+  findIndex = (i + findRanges.length) % findRanges.length;
+  const range = findRanges[findIndex];
+  CSS.highlights.set('search-current', new Highlight(range));
+  findCount.textContent = (findIndex + 1) + '/' + findRanges.length;
+
+  const rect = range.getBoundingClientRect();
+  const contentRect = tab.contentEl.getBoundingClientRect();
+  if (rect.top < contentRect.top + 60 || rect.bottom > contentRect.bottom - 20) {
+    tab.contentEl.scrollBy({
+      top: rect.top - contentRect.top - tab.contentEl.clientHeight / 2,
+    });
+  }
+}
+
+findInput.addEventListener('input', runFind);
+findInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    setCurrentMatch(findIndex + (e.shiftKey ? -1 : 1));
+  }
+  if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+});
+document.getElementById('find-next').addEventListener('click', () => setCurrentMatch(findIndex + 1));
+document.getElementById('find-prev').addEventListener('click', () => setCurrentMatch(findIndex - 1));
+document.getElementById('find-close').addEventListener('click', closeFind);
 
 /* ---------- Welcome screen ---------- */
 
@@ -452,6 +738,10 @@ if (host) {
         if (tab) activateTab(tab.id);
         break;
       }
+      case 'prefs':
+        tocVisible = m.tocVisible !== false;
+        for (const t of tabs) t.paneEl.classList.toggle('toc-hidden', !tocVisible);
+        break;
       case 'dragState':
         dropOverlay.classList.toggle('show', !!m.show);
         break;
@@ -480,12 +770,28 @@ window.addEventListener('keydown', e => {
   }
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'r') {
     e.preventDefault();
-    const tab = tabs.find(t => t.id === activeId);
+    const tab = activeTab();
     if (tab) send({ cmd: 'reload', path: tab.path });
   }
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'w') {
     e.preventDefault();
     if (activeId !== null) closeTab(activeId);
+  }
+  if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    if (activeTab()) openFind();
+  }
+  if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'b') {
+    e.preventDefault();
+    if (activeTab()) toggleToc();
+  }
+  if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'p') {
+    e.preventDefault();
+    const tab = activeTab();
+    if (tab) send({ cmd: 'exportPdf', path: tab.path });
+  }
+  if (e.key === 'Escape' && !findbar.hidden) {
+    closeFind();
   }
 });
 

@@ -109,6 +109,11 @@ public partial class MainWindow : Window
                     await OpenRelativeLinkAsync(basePath, href);
                 break;
 
+            case "exportPdf":
+                if (msg.TryGetProperty("path", out var ep) && ep.GetString() is { } exportSource)
+                    await ExportPdfAsync(exportSource);
+                break;
+
             case "openExternal":
                 if (msg.TryGetProperty("url", out var up) && up.GetString() is { } url)
                     OpenExternal(url);
@@ -148,6 +153,8 @@ public partial class MainWindow : Window
 
     private async Task RestoreSessionAsync()
     {
+        PostToReader(new { type = "prefs", tocVisible = _session.TocVisible });
+
         foreach (var f in _session.Files.Where(f => File.Exists(f.Path)))
             await OpenFileAsync(f.Path, f.Scroll);
 
@@ -187,6 +194,33 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ExportPdfAsync(string sourcePath)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export as PDF",
+            FileName = Path.GetFileNameWithoutExtension(sourcePath) + ".pdf",
+            Filter = "PDF (*.pdf)|*.pdf",
+            InitialDirectory = Path.GetDirectoryName(sourcePath),
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        try
+        {
+            // The @media print stylesheet hides the app chrome, so only the
+            // active document is printed.
+            bool ok = await webView.CoreWebView2.PrintToPdfAsync(dialog.FileName, null);
+            if (!ok)
+                MessageBox.Show(this, "The PDF could not be written.", "Export as PDF",
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "PDF export failed: " + ex.Message, "Export as PDF",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private static void OpenExternal(string url)
     {
         if (url.StartsWith("http://") || url.StartsWith("https://") || url.StartsWith("mailto:"))
@@ -216,6 +250,9 @@ public partial class MainWindow : Window
         }
         _session.Files = files;
         _session.ActivePath = msg.TryGetProperty("activePath", out var ap) ? ap.GetString() : null;
+        if (msg.TryGetProperty("tocVisible", out var tv) &&
+            tv.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            _session.TocVisible = tv.GetBoolean();
         SessionStore.Save(_session);
     }
 
