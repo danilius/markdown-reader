@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown Reader</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #656d76;
+    --border: #d1d9e0;
+    --accent: #0969da;
+    --tabbar-bg: #dfe3e8;
+    --tab-bg: #cdd3da;
+    --tab-active-bg: #ffffff;
+    --tab-hover-bg: #e7ebef;
+    --code-bg: #f6f8fa;
+    --blockquote: #656d76;
+    --thead-bg: #f6f8fa;
+    --row-alt: #f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #8b949e;
+      --border: #30363d;
+      --accent: #4493f8;
+      --tabbar-bg: #010409;
+      --tab-bg: #161b22;
+      --tab-active-bg: #0d1117;
+      --tab-hover-bg: #21262d;
+      --code-bg: #161b22;
+      --blockquote: #8b949e;
+      --thead-bg: #161b22;
+      --row-alt: #161b22;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial,
+                 "Noto Sans Hebrew", "Segoe UI Historic", sans-serif;
+  }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ---------- Tab bar ---------- */
+  #tabbar {
+    flex: 0 0 auto;
+    display: flex; align-items: flex-end;
+    background: var(--tabbar-bg);
+    padding: 6px 8px 0 8px;
+    gap: 2px;
+    user-select: none;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .tab {
+    display: flex; align-items: center; gap: 6px;
+    max-width: 220px; min-width: 90px;
+    padding: 7px 8px 7px 12px;
+    background: var(--tab-bg);
+    border-radius: 8px 8px 0 0;
+    font-size: 12.5px;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+    flex: 0 1 auto;
+  }
+  .tab:hover { background: var(--tab-hover-bg); }
+  .tab.active { background: var(--tab-active-bg); color: var(--fg); }
+  .tab .title {
+    overflow: hidden; text-overflow: ellipsis;
+    direction: ltr; unicode-bidi: plaintext;
+    flex: 1 1 auto;
+  }
+  .tab .close {
+    flex: 0 0 auto;
+    width: 18px; height: 18px; line-height: 16px;
+    text-align: center; border-radius: 50%;
+    font-size: 14px;
+  }
+  .tab .close:hover { background: rgba(128,128,128,.35); }
+  #newtab-btn, #open-btn {
+    flex: 0 0 auto;
+    border: none; background: transparent; color: var(--muted);
+    font-size: 17px; cursor: pointer;
+    width: 28px; height: 28px; border-radius: 6px;
+    margin: 0 2px 3px 2px;
+    font-family: inherit;
+  }
+  #newtab-btn:hover, #open-btn:hover { background: var(--tab-hover-bg); color: var(--fg); }
+
+  /* ---------- Content ---------- */
+  #panes { flex: 1 1 auto; position: relative; overflow: hidden; }
+  .pane {
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    display: none;
+  }
+  .pane.active { display: block; }
+  .doc {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 40px 80px 40px;
+    font-size: 16px;
+    line-height: 1.6;
+    word-wrap: break-word;
+  }
+
+  /* ---------- Markdown styling (GitHub-like) ---------- */
+  .doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
+    margin-top: 24px; margin-bottom: 16px;
+    font-weight: 600; line-height: 1.25;
+  }
+  .doc h1 { font-size: 2em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+  .doc h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+  .doc h3 { font-size: 1.25em; }
+  .doc h4 { font-size: 1em; }
+  .doc h5 { font-size: .875em; }
+  .doc h6 { font-size: .85em; color: var(--muted); }
+  .doc p, .doc blockquote, .doc ul, .doc ol, .doc dl, .doc table, .doc pre {
+    margin-top: 0; margin-bottom: 16px;
+  }
+  .doc a { color: var(--accent); text-decoration: none; }
+  .doc a:hover { text-decoration: underline; }
+  .doc blockquote {
+    padding: 0 1em; color: var(--blockquote);
+    border-inline-start: .25em solid var(--border);
+    margin-inline: 0;
+  }
+  .doc ul, .doc ol { padding-inline-start: 2em; }
+  .doc li + li { margin-top: .25em; }
+  .doc hr {
+    height: .25em; padding: 0; margin: 24px 0;
+    background-color: var(--border); border: 0;
+  }
+  .doc table {
+    border-spacing: 0; border-collapse: collapse;
+    display: block; max-width: 100%; overflow-x: auto;
+  }
+  .doc th, .doc td {
+    padding: 6px 13px; border: 1px solid var(--border);
+  }
+  .doc thead th { background: var(--thead-bg); font-weight: 600; }
+  .doc tbody tr:nth-child(2n) { background: var(--row-alt); }
+  .doc img { max-width: 100%; }
+  .doc code, .doc pre {
+    font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+    font-size: 85%;
+  }
+  .doc code {
+    background: var(--code-bg);
+    padding: .2em .4em; border-radius: 6px;
+    direction: ltr; unicode-bidi: isolate;
+  }
+  .doc pre {
+    background: var(--code-bg);
+    padding: 16px; border-radius: 6px;
+    overflow-x: auto; line-height: 1.45;
+    direction: ltr;
+  }
+  .doc pre code { background: transparent; padding: 0; }
+  .doc input[type="checkbox"] { margin-inline-end: .5em; }
+
+  /* ---------- Welcome / empty state ---------- */
+  .welcome {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--muted); gap: 12px; text-align: center; padding: 24px;
+  }
+  .welcome .big { font-size: 40px; }
+  .welcome h2 { margin: 0; font-weight: 500; color: var(--fg); }
+  .welcome p { margin: 0; font-size: 14px; }
+  .welcome kbd {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 5px;
+    padding: 1px 6px; font-size: 12px; font-family: inherit;
+  }
+  .welcome button {
+    margin-top: 8px; padding: 8px 20px;
+    font-size: 14px; font-family: inherit;
+    background: var(--accent); color: #fff;
+    border: none; border-radius: 6px; cursor: pointer;
+  }
+  .welcome button:hover { filter: brightness(1.1); }
+
+  /* ---------- Drag overlay ---------- */
+  #drop-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(9,105,218,.12);
+    border: 3px dashed var(--accent);
+    display: none;
+    align-items: center; justify-content: center;
+    font-size: 22px; color: var(--accent); font-weight: 600;
+    pointer-events: none;
+  }
+  #drop-overlay.show { display: flex; }
+
+  /* ---------- Error bar ---------- */
+  .filebar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--muted);
+  }
+  .filebar .path {
+    flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; direction: ltr; unicode-bidi: plaintext; text-align: start;
+  }
+  .filebar button {
+    flex: 0 0 auto;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--muted); border-radius: 5px; cursor: pointer;
+    font-size: 11.5px; padding: 2px 9px; font-family: inherit;
+  }
+  .filebar button:hover { color: var(--fg); border-color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="tabbar">
+  <button id="open-btn" title="Open file… (Ctrl+O)">&#128194;</button>
+  <!-- tabs get inserted here -->
+  <button id="newtab-btn" title="New tab — open file… (Ctrl+O)">+</button>
+</div>
+<div id="panes"></div>
+<div id="drop-overlay">Drop Markdown files to open</div>
+<input type="file" id="file-input" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain" multiple style="display:none">
+
+<script>/*__MARKED__*/</script>
+<script>/*__PURIFY__*/</script>
+<script>
+(() => {
+'use strict';
+
+const tabbar   = document.getElementById('tabbar');
+const panes    = document.getElementById('panes');
+const newtabBtn = document.getElementById('newtab-btn');
+const openBtn  = document.getElementById('open-btn');
+const fileInput = document.getElementById('file-input');
+const dropOverlay = document.getElementById('drop-overlay');
+
+marked.setOptions({ gfm: true, breaks: false });
+
+let tabs = [];          // {id, name, pathHint, handle, tabEl, paneEl}
+let activeId = null;
+let nextId = 1;
+
+/* ---------- Rendering ---------- */
+
+function renderMarkdown(text) {
+  const rawHtml = marked.parse(text);
+  const clean = DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
+  const doc = document.createElement('div');
+  doc.className = 'doc';
+  doc.innerHTML = clean;
+  // Chrome renders a plain .md file as an LTR document: lines flow left-to-
+  // right and Hebrew runs are handled inline by the Unicode bidi algorithm.
+  // So the document stays dir="ltr" (the default) with no per-block flipping.
+  // Links open outside the reader
+  doc.querySelectorAll('a[href]').forEach(a => {
+    a.target = '_blank';
+    a.rel = 'noopener';
+  });
+  return doc;
+}
+
+/* ---------- Tabs ---------- */
+
+function createTab({ name, text, pathHint, handle }) {
+  const id = nextId++;
+
+  const tabEl = document.createElement('div');
+  tabEl.className = 'tab';
+  tabEl.title = pathHint || name;
+  const titleEl = document.createElement('span');
+  titleEl.className = 'title';
+  titleEl.textContent = name;
+  const closeEl = document.createElement('span');
+  closeEl.className = 'close';
+  closeEl.textContent = '×';
+  closeEl.title = 'Close tab';
+  tabEl.append(titleEl, closeEl);
+  tabbar.insertBefore(tabEl, newtabBtn);
+
+  const paneEl = document.createElement('div');
+  paneEl.className = 'pane';
+  panes.appendChild(paneEl);
+
+  const tab = { id, name, pathHint, handle, tabEl, paneEl };
+  tabs.push(tab);
+
+  fillPane(tab, text);
+
+  tabEl.addEventListener('click', e => {
+    if (e.target === closeEl) closeTab(id);
+    else activateTab(id);
+  });
+  tabEl.addEventListener('auxclick', e => {   // middle-click closes, like a browser
+    if (e.button === 1) { e.preventDefault(); closeTab(id); }
+  });
+
+  activateTab(id);
+  return tab;
+}
+
+function fillPane(tab, text) {
+  tab.paneEl.replaceChildren();
+  if (tab.handle) {
+    const bar = document.createElement('div');
+    bar.className = 'filebar';
+    const pathSpan = document.createElement('span');
+    pathSpan.className = 'path';
+    pathSpan.textContent = tab.pathHint || tab.name;
+    const reloadBtn = document.createElement('button');
+    reloadBtn.textContent = '↻ Reload';
+    reloadBtn.title = 'Re-read the file from disk';
+    reloadBtn.addEventListener('click', () => reloadTab(tab.id));
+    bar.append(pathSpan, reloadBtn);
+    tab.paneEl.appendChild(bar);
+  }
+  tab.paneEl.appendChild(renderMarkdown(text));
+}
+
+async function reloadTab(id) {
+  const tab = tabs.find(t => t.id === id);
+  if (!tab || !tab.handle) return;
+  try {
+    const file = await tab.handle.getFile();
+    const text = await file.text();
+    const scroll = tab.paneEl.scrollTop;
+    fillPane(tab, text);
+    tab.paneEl.scrollTop = scroll;
+  } catch (err) {
+    console.error('Reload failed:', err);
+  }
+}
+
+function activateTab(id) {
+  activeId = id;
+  for (const t of tabs) {
+    t.tabEl.classList.toggle('active', t.id === id);
+    t.paneEl.classList.toggle('active', t.id === id);
+  }
+}
+
+function closeTab(id) {
+  const idx = tabs.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  const [tab] = tabs.splice(idx, 1);
+  tab.tabEl.remove();
+  tab.paneEl.remove();
+  if (activeId === id) {
+    const next = tabs[idx] || tabs[idx - 1];
+    if (next) activateTab(next.id);
+    else { activeId = null; showWelcome(); }
+  }
+}
+
+/* ---------- Welcome screen ---------- */
+
+let welcomePane = null;
+function showWelcome() {
+  if (!welcomePane) {
+    welcomePane = document.createElement('div');
+    welcomePane.className = 'pane';
+    welcomePane.innerHTML = `
+      <div class="welcome">
+        <div class="big">&#128220;</div>
+        <h2>Markdown Reader</h2>
+        <p>Drag Markdown files anywhere in this window,<br>
+           or press <kbd>Ctrl</kbd>+<kbd>O</kbd> to browse.</p>
+        <button id="welcome-open">Open file&hellip;</button>
+      </div>`;
+    panes.appendChild(welcomePane);
+    welcomePane.querySelector('#welcome-open').addEventListener('click', openFilePicker);
+  }
+  welcomePane.classList.add('active');
+}
+function hideWelcome() {
+  if (welcomePane) welcomePane.classList.remove('active');
+}
+
+/* ---------- Opening files ---------- */
+
+async function openFromHandle(handle) {
+  try {
+    const file = await handle.getFile();
+    const text = await file.text();
+    hideWelcome();
+    createTab({ name: file.name, text, pathHint: file.name, handle });
+  } catch (err) {
+    console.error('Could not open file:', err);
+  }
+}
+
+async function openFromFile(file) {
+  const text = await file.text();
+  hideWelcome();
+  createTab({ name: file.name, text, pathHint: file.name, handle: null });
+}
+
+async function openFilePicker() {
+  if (window.showOpenFilePicker) {
+    let handles;
+    try {
+      handles = await window.showOpenFilePicker({
+        multiple: true,
+        types: [{
+          description: 'Markdown',
+          accept: { 'text/markdown': ['.md', '.markdown', '.mdown', '.mkd', '.txt'] }
+        }]
+      });
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;  // user cancelled
+      fileInput.click();                              // API blocked — classic dialog
+      return;
+    }
+    for (const h of handles) await openFromHandle(h);
+  } else {
+    fileInput.click();
+  }
+}
+
+fileInput.addEventListener('change', async () => {
+  for (const f of fileInput.files) await openFromFile(f);
+  fileInput.value = '';
+});
+
+openBtn.addEventListener('click', openFilePicker);
+newtabBtn.addEventListener('click', openFilePicker);
+
+/* ---------- Drag & drop ---------- */
+
+let dragDepth = 0;
+window.addEventListener('dragenter', e => {
+  e.preventDefault();
+  if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+    dragDepth++;
+    dropOverlay.classList.add('show');
+  }
+});
+window.addEventListener('dragleave', e => {
+  e.preventDefault();
+  if (--dragDepth <= 0) { dragDepth = 0; dropOverlay.classList.remove('show'); }
+});
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', async e => {
+  e.preventDefault();
+  dragDepth = 0;
+  dropOverlay.classList.remove('show');
+  const items = e.dataTransfer.items;
+  if (items && items.length && items[0].getAsFileSystemHandle) {
+    const handlePromises = [...items]
+      .filter(it => it.kind === 'file')
+      .map(it => it.getAsFileSystemHandle());   // must be collected synchronously
+    for (const p of handlePromises) {
+      const h = await p;
+      if (h && h.kind === 'file') await openFromHandle(h);
+    }
+  } else {
+    for (const f of e.dataTransfer.files) await openFromFile(f);
+  }
+});
+
+/* ---------- Keyboard shortcuts ---------- */
+
+window.addEventListener('keydown', e => {
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    openFilePicker();
+  }
+  if (e.ctrlKey && e.key === 'Tab') {
+    e.preventDefault();
+    if (tabs.length < 2) return;
+    const idx = tabs.findIndex(t => t.id === activeId);
+    const next = e.shiftKey
+      ? tabs[(idx - 1 + tabs.length) % tabs.length]
+      : tabs[(idx + 1) % tabs.length];
+    activateTab(next.id);
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === 'r' && !e.shiftKey) {
+    const tab = tabs.find(t => t.id === activeId);
+    if (tab && tab.handle) { e.preventDefault(); reloadTab(tab.id); }
+  }
+});
+
+/* Expose a tiny API for automated testing */
+window.__reader = {
+  openText: (name, text) => { hideWelcome(); return createTab({ name, text, pathHint: name, handle: null }).id; },
+  tabCount: () => tabs.length,
+  activeTabName: () => (tabs.find(t => t.id === activeId) || {}).name || null,
+  closeActive: () => closeTab(activeId),
+};
+
+showWelcome();
+})();
+</script>
+</body>
+</html>
