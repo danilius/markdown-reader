@@ -799,15 +799,38 @@ if (host) {
         applyTocWidth();
         for (const t of tabs) t.paneEl.classList.toggle('toc-hidden', !tocVisible);
         break;
-      case 'dragState':
-        dropOverlay.classList.toggle('show', !!m.show);
-        break;
     }
   });
 }
 
 openBtn.addEventListener('click', () => send({ cmd: 'openDialog' }));
 newtabBtn.addEventListener('click', () => send({ cmd: 'openDialog' }));
+
+/* ---------- Drag & drop ---------- */
+/* The drop lands in the page; postMessageWithAdditionalObjects hands the
+   DOM File objects to the host, where they surface with real disk paths. */
+
+let dragDepth = 0;
+window.addEventListener('dragenter', e => {
+  e.preventDefault();
+  if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+    dragDepth++;
+    dropOverlay.classList.add('show');
+  }
+});
+window.addEventListener('dragleave', e => {
+  e.preventDefault();
+  if (--dragDepth <= 0) { dragDepth = 0; dropOverlay.classList.remove('show'); }
+});
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  dragDepth = 0;
+  dropOverlay.classList.remove('show');
+  const files = e.dataTransfer ? e.dataTransfer.files : null;
+  if (host && files && files.length)
+    host.postMessageWithAdditionalObjects({ cmd: 'drop' }, [...files]);
+});
 
 /* ---------- Keyboard shortcuts ---------- */
 

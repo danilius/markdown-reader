@@ -59,9 +59,6 @@ public partial class MainWindow : Window
 
         core.WebMessageReceived += OnWebMessage;
 
-        // Let WPF receive drag & drop so we get real file paths.
-        webView.AllowExternalDrop = false;
-
         core.Navigate("https://app.reader/index.html");
     }
 
@@ -83,6 +80,18 @@ public partial class MainWindow : Window
 
             case "openDialog":
                 ShowOpenDialog();
+                break;
+
+            case "drop":
+                // Dropped files arrive as CoreWebView2File objects, which carry
+                // the real on-disk path (unlike DOM File objects in JS).
+                var dropped = new List<string>();
+                if (e.AdditionalObjects is { } objects)
+                    foreach (var obj in objects)
+                        if (obj is CoreWebView2File file &&
+                            !string.IsNullOrEmpty(file.Path) && File.Exists(file.Path))
+                            dropped.Add(file.Path);
+                await OpenFilesAsync(dropped);
                 break;
 
             case "reload":
@@ -298,36 +307,6 @@ public partial class MainWindow : Window
             _session.WindowHeight = RestoreBounds.Height;
         }
         SessionStore.Save(_session);
-    }
-
-    /* ---------- Drag & drop (WPF side, so we get real paths) ---------- */
-
-    private static bool HasFiles(DragEventArgs e) => e.Data.GetDataPresent(DataFormats.FileDrop);
-
-    private void Window_DragEnter(object sender, DragEventArgs e)
-    {
-        if (HasFiles(e)) PostToReader(new { type = "dragState", show = true });
-        e.Handled = true;
-    }
-
-    private void Window_DragLeave(object sender, DragEventArgs e)
-    {
-        PostToReader(new { type = "dragState", show = false });
-        e.Handled = true;
-    }
-
-    private void Window_DragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = HasFiles(e) ? DragDropEffects.Copy : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    private void Window_Drop(object sender, DragEventArgs e)
-    {
-        PostToReader(new { type = "dragState", show = false });
-        if (HasFiles(e) && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
-            _ = OpenFilesAsync(paths.Where(File.Exists));
-        e.Handled = true;
     }
 
     /* ---------- Helpers ---------- */
