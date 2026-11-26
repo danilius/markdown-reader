@@ -75,7 +75,7 @@ running window.
 - `Session.cs` — the `session.json` model and store.
 - `App.xaml.cs` — single-instance mutex + named-pipe forwarding of file
   arguments.
-- `wwwroot/index.html` — the renderer (adapted from `../src/reader.template.html`);
+- `wwwroot/index.html` — the renderer (adapted from `../web/src/reader.template.html`);
   talks to the host over `chrome.webview.postMessage`.
 - `wwwroot/marked.min.js`, `wwwroot/purify.min.js` — copies of the vendored
-  libraries in the parent folder.
+  libraries in `../web/`.
