@@ -12,7 +12,7 @@ persistence, and single-instance tab opening.
 
 ## Use
 
-Open **`MarkdownReader.html`** in Chrome or Edge (double-click it, or pin a
+Open **`web/MarkdownReader.html`** in Chrome or Edge (double-click it, or pin a
 shortcut). Then:
 
 - **Open files** — drag `.md` files anywhere into the window, click the 📂
@@ -28,7 +28,7 @@ Everything is inlined; no internet connection or installation is needed.
 Tip: for a cleaner app-like window without the browser chrome, create a
 shortcut with the target:
 
-    chrome.exe --app="file:///F:/Git Repos/Markdown reader/MarkdownReader.html"
+    chrome.exe --app="file:///F:/Git Repos/Markdown reader/web/MarkdownReader.html"
 
 ## Rendering notes
 
@@ -41,11 +41,13 @@ shortcut with the target:
 
 ## Development
 
-- `src/reader.template.html` — the app source (edit this, not the built file).
-- `marked.min.js`, `purify.min.js` — vendored libraries, inlined at build time.
-- `build.ps1` — splices the libraries into the template and writes
+The web version lives in [`web/`](web/):
+
+- `web/src/reader.template.html` — the app source (edit this, not the built file).
+- `web/marked.min.js`, `web/purify.min.js` — vendored libraries, inlined at build time.
+- `web/build.ps1` — splices the libraries into the template and writes
   `MarkdownReader.html`.
 
 Rebuild after editing the template:
 
-    powershell -File build.ps1
+    powershell -File web/build.ps1
