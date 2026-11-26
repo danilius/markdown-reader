@@ -59,9 +59,6 @@ public partial class MainWindow : Window
 
         core.WebMessageReceived += OnWebMessage;
 
-        // Let WPF receive drag & drop so we get real file paths.
-        webView.AllowExternalDrop = false;
-
         core.Navigate("https://app.reader/index.html");
     }
 
@@ -83,6 +80,18 @@ public partial class MainWindow : Window
 
             case "openDialog":
                 ShowOpenDialog();
+                break;
+
+            case "drop":
+                // Dropped files arrive as CoreWebView2File objects, which carry
+                // the real on-disk path (unlike DOM File objects in JS).
+                var dropped = new List<string>();
+                if (e.AdditionalObjects is { } objects)
+                    foreach (var obj in objects)
+                        if (obj is CoreWebView2File file &&
+                            !string.IsNullOrEmpty(file.Path) && File.Exists(file.Path))
+                            dropped.Add(file.Path);
+                await OpenFilesAsync(dropped);
                 break;
 
             case "reload":
@@ -107,6 +116,11 @@ public partial class MainWindow : Window
                 if (msg.TryGetProperty("base", out var bp) && bp.GetString() is { } basePath &&
                     msg.TryGetProperty("href", out var hp) && hp.GetString() is { } href)
                     await OpenRelativeLinkAsync(basePath, href);
+                break;
+
+            case "exportPdf":
+                if (msg.TryGetProperty("path", out var ep) && ep.GetString() is { } exportSource)
+                    await ExportPdfAsync(exportSource);
                 break;
 
             case "openExternal":
@@ -148,6 +162,8 @@ public partial class MainWindow : Window
 
     private async Task RestoreSessionAsync()
     {
+        PostToReader(new { type = "prefs", tocVisible = _session.TocVisible, tocWidth = _session.TocWidth });
+
         foreach (var f in _session.Files.Where(f => File.Exists(f.Path)))
             await OpenFileAsync(f.Path, f.Scroll);
 
@@ -187,6 +203,33 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ExportPdfAsync(string sourcePath)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export as PDF",
+            FileName = Path.GetFileNameWithoutExtension(sourcePath) + ".pdf",
+            Filter = "PDF (*.pdf)|*.pdf",
+            InitialDirectory = Path.GetDirectoryName(sourcePath),
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        try
+        {
+            // The @media print stylesheet hides the app chrome, so only the
+            // active document is printed.
+            bool ok = await webView.CoreWebView2.PrintToPdfAsync(dialog.FileName, null);
+            if (!ok)
+                MessageBox.Show(this, "The PDF could not be written.", "Export as PDF",
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "PDF export failed: " + ex.Message, "Export as PDF",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private static void OpenExternal(string url)
     {
         if (url.StartsWith("http://") || url.StartsWith("https://") || url.StartsWith("mailto:"))
@@ -216,6 +259,11 @@ public partial class MainWindow : Window
         }
         _session.Files = files;
         _session.ActivePath = msg.TryGetProperty("activePath", out var ap) ? ap.GetString() : null;
+        if (msg.TryGetProperty("tocVisible", out var tv) &&
+            tv.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            _session.TocVisible = tv.GetBoolean();
+        if (msg.TryGetProperty("tocWidth", out var tw) && tw.ValueKind == JsonValueKind.Number)
+            _session.TocWidth = Math.Clamp(tw.GetDouble(), 140, 600);
         SessionStore.Save(_session);
     }
 
@@ -259,36 +307,6 @@ public partial class MainWindow : Window
             _session.WindowHeight = RestoreBounds.Height;
         }
         SessionStore.Save(_session);
-    }
-
-    /* ---------- Drag & drop (WPF side, so we get real paths) ---------- */
-
-    private static bool HasFiles(DragEventArgs e) => e.Data.GetDataPresent(DataFormats.FileDrop);
-
-    private void Window_DragEnter(object sender, DragEventArgs e)
-    {
-        if (HasFiles(e)) PostToReader(new { type = "dragState", show = true });
-        e.Handled = true;
-    }
-
-    private void Window_DragLeave(object sender, DragEventArgs e)
-    {
-        PostToReader(new { type = "dragState", show = false });
-        e.Handled = true;
-    }
-
-    private void Window_DragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = HasFiles(e) ? DragDropEffects.Copy : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    private void Window_Drop(object sender, DragEventArgs e)
-    {
-        PostToReader(new { type = "dragState", show = false });
-        if (HasFiles(e) && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
-            _ = OpenFilesAsync(paths.Where(File.Exists));
-        e.Handled = true;
     }
 
     /* ---------- Helpers ---------- */
